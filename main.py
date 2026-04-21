@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 
 from jira_client import get_tickets
 from llm_client import summarize_ticket
+from reply_classifier import classify_reply
+from models.reply import RocketChatReplyPayload
 from models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
 from rocketchat_client import send_summary
 
@@ -105,3 +107,25 @@ async def process_tickets_batch(payload: JiraTicketsBatchPayload):
             )
 
     return JSONResponse({"status": "done", "results": results})
+
+
+@app.post("/replies/process", tags=["Replies"])
+async def process_reply(payload: RocketChatReplyPayload):
+    """Classify one Rocket.Chat reply and keep the original message/user correlation."""
+    try:
+        result = classify_reply(payload.to_domain())
+        return JSONResponse({"status": "done", "result": result.model_dump()})
+    except Exception as e:
+        logging.error(
+            "Error processing Rocket.Chat reply %s: %s",
+            payload.source_message_id,
+            e,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "source_message_id": payload.source_message_id,
+                "detail": str(e),
+            },
+        )

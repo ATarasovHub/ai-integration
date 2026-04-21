@@ -144,6 +144,7 @@ Service available at `http://localhost:8000` · Documentation: `http://localhost
 | `POST` | `/run/sync` | Run pipeline **synchronously** — waits and returns results |
 | `POST` | `/tickets/process` | Accept one Jira ticket JSON, summarize it, send to Rocket.Chat |
 | `POST` | `/tickets/process/batch` | Accept several Jira tickets in one request |
+| `POST` | `/replies/process` | Accept one Rocket.Chat reply, classify whether the user takes the ticket |
 | `GET` | `/docs` | Swagger UI |
 
 ### Example Usage
@@ -166,6 +167,18 @@ curl -X POST http://localhost:8000/tickets/process \
     "assignee": "Ivan Petrov",
     "priority": "Critical",
     "reporter": "Maria Sidorova"
+  }'
+
+# Process one Rocket.Chat reply and preserve message/user correlation
+curl -X POST http://localhost:8000/replies/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticket_key": "PROJ-42",
+    "source_message_id": "rocket-msg-123",
+    "parent_message_id": "rocket-parent-001",
+    "source_user_id": "user-42",
+    "source_username": "ivan.petrov",
+    "text": "I cannot take it yet, I need production logs."
   }'
 ```
 
@@ -198,6 +211,23 @@ ROCKETCHAT_USE_MOCK=true
 ```
 
 Switch them to `false` in `.env` for production mode, then make sure real URLs and tokens are filled in.
+
+## 💬 Reply Classification Flow
+
+The service can also classify a Rocket.Chat reply for one concrete message and user. This avoids mixing replies when several people answer while the LLM is still processing.
+
+The classifier returns:
+
+```json
+{
+  "source_message_id": "rocket-msg-123",
+  "source_user_id": "user-42",
+  "confirmed_to_take": false,
+  "clarification_response": "Needs production logs before taking the ticket."
+}
+```
+
+Recommended next step for production: persist outbound bot messages, inbound replies, and LLM decisions in a database so the service can safely deduplicate and aggregate multiple replies in one thread.
 
 ---
 
