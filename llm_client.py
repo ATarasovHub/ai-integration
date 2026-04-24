@@ -6,6 +6,7 @@ from models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 
+# Prompt template that tells Ollama how to summarize a Jira ticket.
 PROMPT_TEMPLATE = """You are a development team assistant. You are given a Jira ticket.
 Write a brief summary (3-5 sentences) in English:
 - What the problem or task is
@@ -28,6 +29,7 @@ Summary:"""
 def summarize_ticket(ticket: JiraTicket) -> str:
     """Send ticket to Ollama and get summary."""
 
+    # Insert the current ticket values into the prompt template.
     prompt = PROMPT_TEMPLATE.format(
         key=ticket.key,
         summary=ticket.summary,
@@ -38,6 +40,7 @@ def summarize_ticket(ticket: JiraTicket) -> str:
         reporter=ticket.reporter or "Not specified",
     )
 
+    # Build the Ollama generate request.
     url = f"{settings.OLLAMA_BASE_URL}/api/generate"
     payload = {
         "model": settings.OLLAMA_MODEL,
@@ -47,6 +50,7 @@ def summarize_ticket(ticket: JiraTicket) -> str:
 
     logger.info(f"Sending ticket {ticket.key} to Ollama (model: {settings.OLLAMA_MODEL})")
 
+    # Send the prompt to Ollama and return the generated text.
     try:
         response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()

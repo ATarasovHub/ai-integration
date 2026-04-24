@@ -7,6 +7,7 @@ from models.reply import ReplyDecision, RocketChatReply
 
 logger = logging.getLogger(__name__)
 
+# Prompt template that asks Ollama to classify one Rocket.Chat reply.
 PROMPT_TEMPLATE = """You classify a single Rocket.Chat reply about taking ownership of a Jira ticket.
 
 Return JSON only with this exact schema:
@@ -33,6 +34,7 @@ message_text: {text}
 
 
 def classify_reply(reply: RocketChatReply) -> ReplyDecision:
+    # Insert the reply context into the classification prompt.
     prompt = PROMPT_TEMPLATE.format(
         ticket_key=reply.ticket_key,
         source_message_id=reply.source_message_id,
@@ -42,6 +44,7 @@ def classify_reply(reply: RocketChatReply) -> ReplyDecision:
         text=reply.text,
     )
 
+    # Build the Ollama request and force a JSON formatted answer.
     url = f"{settings.OLLAMA_BASE_URL}/api/generate"
     payload = {
         "model": settings.OLLAMA_MODEL,
@@ -56,6 +59,7 @@ def classify_reply(reply: RocketChatReply) -> ReplyDecision:
         reply.source_user_id,
     )
 
+    # Parse and validate the JSON response as a ReplyDecision model.
     try:
         response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()

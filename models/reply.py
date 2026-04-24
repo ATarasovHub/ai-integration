@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 
-# Internes Datenobjekt – repräsentiert eine Antwort aus Rocket.Chat
+# Internal data object that represents one Rocket.Chat reply.
 @dataclass
 class RocketChatReply:
     ticket_key: str
@@ -15,7 +15,7 @@ class RocketChatReply:
     text: str
 
 
-# API-Eingabemodell für eingehende Rocket.Chat-Antworten
+# API input model for incoming Rocket.Chat replies.
 class RocketChatReplyPayload(BaseModel):
     ticket_key: str = Field(..., examples=["PROJ-42"])
     source_message_id: str = Field(..., examples=["rocket-msg-123"])
@@ -28,7 +28,7 @@ class RocketChatReplyPayload(BaseModel):
     source_username: Optional[str] = Field(default=None, examples=["ivan.petrov"])
     text: str = Field(..., min_length=1, examples=["I cannot take it yet, I need production logs."])
 
-    # Konvertiert das API-Modell in das interne Domänenobjekt
+    # Convert the API model into the internal domain object.
     def to_domain(self) -> RocketChatReply:
         return RocketChatReply(
             ticket_key=self.ticket_key,
@@ -40,14 +40,14 @@ class RocketChatReplyPayload(BaseModel):
         )
 
 
-# Ergebnis der KI-Klassifizierung: Ticket übernommen oder Rückfrage nötig
+# Result of the AI classification: ticket accepted or clarification needed.
 class ReplyDecision(BaseModel):
     source_message_id: str
     source_user_id: str
     confirmed_to_take: bool
     clarification_response: Optional[str] = None
 
-    # Validierung: Rückfrage nur erforderlich, wenn Ticket nicht übernommen wird
+    # Validation: clarification is required only when the ticket is not accepted.
     @model_validator(mode="after")
     def validate_clarification_response(self):
         if self.confirmed_to_take:

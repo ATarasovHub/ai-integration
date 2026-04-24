@@ -7,6 +7,7 @@ from models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 
+# Local example tickets used when the Jira mock mode is enabled.
 MOCK_TICKETS = [
     {
         "key": "MYPROJECT-1",
@@ -31,11 +32,11 @@ MOCK_TICKETS = [
         }
     },
 ]
-# ---------------------------------------------------------------
 
 
 def _parse_ticket(raw: dict) -> JiraTicket:
     """Parse raw JSON from Jira API into dataclass."""
+    # Convert Jira's nested API response into the simpler internal ticket model.
     fields = raw.get("fields", {})
     return JiraTicket(
         key=raw.get("key", "UNKNOWN"),
@@ -51,11 +52,12 @@ def _parse_ticket(raw: dict) -> JiraTicket:
 def get_tickets() -> List[JiraTicket]:
     """Get tickets from Jira. Returns list of JiraTicket."""
 
+    # In mock mode, return local sample tickets without calling Jira.
     if settings.JIRA_USE_MOCK:
         logger.info("[MOCK] Using mock Jira tickets")
         return [_parse_ticket(t) for t in MOCK_TICKETS]
 
-    # --- Real Jira API request ---
+    # Build the real Jira API request for open project tickets.
     url = f"{settings.JIRA_BASE_URL}/rest/api/2/search"
     params = {
         "jql": f"project={settings.JIRA_PROJECT_KEY} AND status != Done ORDER BY created DESC",
@@ -67,6 +69,7 @@ def get_tickets() -> List[JiraTicket]:
         "Content-Type": "application/json"
     }
 
+    # Send the request and parse every returned issue into the internal model.
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()

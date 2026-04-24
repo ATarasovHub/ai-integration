@@ -12,3 +12,6 @@ __pycache__/
 .codex
 
 .vscode/
+
+# Personal presentation notes.
+PRESENTATION_NOTES_RU.md
