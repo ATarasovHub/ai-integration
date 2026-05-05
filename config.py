@@ -16,6 +16,10 @@ class Settings:
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
 
+    # Path to the team roster JSON used by the /analyze endpoint to pick an assignee.
+    # If the file is missing, the analyzer falls back to a built-in sample roster.
+    TEAM_ROSTER_PATH: str = os.getenv("TEAM_ROSTER_PATH", "team_roster.json")
+
     # Rocket.Chat connection settings.
     ROCKETCHAT_BASE_URL: str = os.getenv("ROCKETCHAT_BASE_URL", "https://your-rocketchat.example.com")
     ROCKETCHAT_TOKEN: str = os.getenv("ROCKETCHAT_TOKEN", "your_rc_token")

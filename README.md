@@ -15,9 +15,12 @@
 
 ## 📌 About
 
-**aiIntegration** is a microservice that automatically collects open tasks from Jira, processes them through a local language model (Ollama), and publishes concise AI summaries directly to the corporate Rocket.Chat channel.
+**aiIntegration** is the AI brain for ticket processing. It serves two roles:
 
-No more manually reading ticket descriptions during meetings — the bot does it for you.
+1. **Standalone pipeline** — pulls open tickets from Jira, summarizes each via a local LLM (Ollama), and posts the summaries to Rocket.Chat.
+2. **AI service for `ticket_router_api`** — exposes `POST /analyze` so the Java router can ask "who on the team should take this ticket?" and get back an assignee with a confidence score. Reply classification is exposed via `POST /replies/process`.
+
+In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it only runs LLM logic. Polling Jira, posting to Rocket.Chat, and assigning tickets are owned by the Java router.
 
 > **Fully on-premise:** data never leaves your infrastructure. Jira, Rocket.Chat, and LLM — everything runs locally.
 
@@ -144,6 +147,7 @@ Service available at `http://localhost:8000` · Documentation: `http://localhost
 | `POST` | `/run/sync` | Run pipeline **synchronously** — waits and returns results |
 | `POST` | `/tickets/process` | Accept one Jira ticket JSON, summarize it, send to Rocket.Chat |
 | `POST` | `/tickets/process/batch` | Accept several Jira tickets in one request |
+| `POST` | `/analyze` | **Routing**: pick best assignee + confidence for a ticket. Used by `ticket_router_api`. Does **not** post to Rocket.Chat. |
 | `POST` | `/replies/process` | Accept one Rocket.Chat reply, classify whether the user takes the ticket |
 | `GET` | `/docs` | Swagger UI |
 
@@ -181,6 +185,35 @@ curl -X POST http://localhost:8000/replies/process \
     "text": "I cannot take it yet, I need production logs."
   }'
 ```
+
+### Example `/analyze` Request / Response
+
+Request shape matches the `AiAnalysisRequest` sent by `ticket_router_api`:
+
+```json
+{
+  "ticketId": "10001",
+  "ticketKey": "PROJ-42",
+  "summary": "Authorization service crashing in prod",
+  "description": "After deploying v2.3.1, users cannot log in.",
+  "priority": "Critical"
+}
+```
+
+Response shape matches the `AiAnalysisResponse` expected by `ticket_router_api`:
+
+```json
+{
+  "assigneeAccountId": "ivan-petrov",
+  "assigneeDisplayName": "Ivan Petrov",
+  "confidence": 0.87,
+  "reasoning": "Auth/backend incident in production matches Ivan's skills."
+}
+```
+
+If the LLM cannot pick a candidate, both `assigneeAccountId` and `assigneeDisplayName` are `null` and `confidence` drops below the Java-side threshold so the router escalates to Rocket.Chat.
+
+The team roster is loaded from `team_roster.json` (path overridable via `TEAM_ROSTER_PATH`). See `team_roster.example.json` for the expected schema. Without a roster file, a small built-in sample roster is used.
 
 ### Example `/run/sync` Response
 
@@ -237,11 +270,18 @@ Recommended next step for production: persist outbound bot messages, inbound rep
 aiIntegration/
 ├── main.py                # FastAPI application, pipeline orchestration
 ├── config.py              # Settings from .env (python-dotenv)
-├── jira_client.py         # Fetching tickets from Jira
+├── jira_client.py         # Fetching tickets from Jira (standalone mode)
 ├── llm_client.py          # Summarization via Ollama
-├── rocketchat_client.py   # Formatting and sending to Rocket.Chat
+├── analyzer.py            # Assignee routing via Ollama (used by ticket_router_api)
+├── reply_classifier.py    # Classifying Rocket.Chat replies via Ollama
+├── rocketchat_client.py   # Formatting and sending to Rocket.Chat (standalone mode)
+├── team_roster.example.json  # Sample team roster used by /analyze
 ├── models/
-│   └── ticket.py          # JiraTicket dataclass
+│   ├── ticket.py          # JiraTicket dataclass + payloads
+│   ├── analysis.py        # AiAnalysisRequest / AiAnalysisResponse (ticket_router_api contract)
+│   └── reply.py           # Rocket.Chat reply payloads + decision
+├── docs/
+│   └── JAVA_INTEGRATION.md   # Recommendations for the ticket_router_api side
 ├── class_diagram.excalidraw  # Class diagram
 ├── .env.example           # Environment variables template
 └── requirements.txt       # Dependencies

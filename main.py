@@ -3,9 +3,11 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse
 
 # Import clients, classifiers, and data models used by the API routes.
+from analyzer import analyze_ticket
 from jira_client import get_tickets
 from llm_client import summarize_ticket
 from reply_classifier import classify_reply
+from models.analysis import AiAnalysisRequest, AiAnalysisResponse
 from models.reply import RocketChatReplyPayload
 from models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
 from rocketchat_client import send_summary
@@ -33,7 +35,6 @@ def process_ticket(ticket: JiraTicket) -> dict:
     send_summary(ticket, summary)
     logger.info(f"Ticket {ticket.key} successfully processed and sent.")
     return {"ticket": ticket.key, "status": "ok", "summary": summary}
-
 
 async def process_tickets_pipeline():
     """Main ticket processing pipeline."""
@@ -123,6 +124,27 @@ async def process_tickets_batch(payload: JiraTicketsBatchPayload):
             )
 
     return JSONResponse({"status": "done", "results": results})
+
+
+@app.post("/analyze", tags=["Routing"], response_model=AiAnalysisResponse)
+async def analyze(request: AiAnalysisRequest):
+    """Pick the best assignee for one Jira ticket. Used by ticket_router_api as the AI brain.
+
+    This endpoint does NOT post to Rocket.Chat — the caller decides whether to auto-assign
+    in Jira (high confidence) or escalate to a chat channel (low confidence).
+    """
+    try:
+        return analyze_ticket(request)
+    except Exception as e:
+        logger.error("Error analyzing ticket %s: %s", request.ticketKey, e)
+        # Return a low-confidence empty response so the router falls back to manual escalation
+        # instead of failing the whole pipeline on a transient LLM error.
+        return AiAnalysisResponse(
+            assigneeAccountId=None,
+            assigneeDisplayName=None,
+            confidence=0.0,
+            reasoning=f"AI analyzer unavailable: {e}",
+        )
 
 
 @app.post("/replies/process", tags=["Replies"])
