@@ -17,7 +17,7 @@ ollama --version
 
 ## Configuration
 
-Model and endpoint come from `.env` (see [`.env.example`](./.env.example)):
+Model and endpoint come from `.env` (see [`.env.example`](../.env.example)):
 
 ```
 OLLAMA_BASE_URL=http://localhost:11434
@@ -28,13 +28,13 @@ Change `OLLAMA_MODEL` to any tag available in the Ollama registry (e.g. `llama3.
 
 ## Automatic start before the app
 
-The project ships with [`scripts/ensure_ollama.sh`](./scripts/ensure_ollama.sh), which:
+The project ships with [`scripts/ensure_ollama.sh`](../scripts/ensure_ollama.sh), which:
 
 1. Checks that `ollama` is installed.
 2. Pings `${OLLAMA_BASE_URL}/api/tags` and starts `ollama serve` in the background if the server is down.
 3. Pulls the model declared in `OLLAMA_MODEL` if it is not present locally.
 
-It is wired as a `preLaunchTask` in [`.vscode/launch.json`](./.vscode/launch.json), so every time you press **Run FastAPI** in VS Code the script runs first and blocks the launch until Ollama is ready.
+It is wired as a `preLaunchTask` in [`.vscode/launch.json`](../.vscode/launch.json), so every time you press **Run FastAPI** in VS Code the script runs first and blocks the launch until Ollama is ready.
 
 ### Manual run (outside VS Code)
 

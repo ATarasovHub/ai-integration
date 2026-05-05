@@ -1,16 +1,20 @@
 import logging
-from fastapi import FastAPI, BackgroundTasks
+from pathlib import Path
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
 # Import clients, classifiers, and data models used by the API routes.
-from analyzer import analyze_ticket
-from jira_client import get_tickets
-from llm_client import summarize_ticket
-from reply_classifier import classify_reply
-from models.analysis import AiAnalysisRequest, AiAnalysisResponse
-from models.reply import RocketChatReplyPayload
-from models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
-from rocketchat_client import send_summary
+from app.models.reply import RocketChatReplyPayload
+from app.models.summary import RocketChatMessage
+from app.models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
+from app.services.jira_client import get_tickets
+from app.services.llm_client import summarize_ticket
+from app.services.reply_classifier import classify_reply
+from app.services.rocketchat_client import format_message, send_summary
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ASSETS_DIR = PROJECT_ROOT / "assets"
 
 # Configure application logging for all modules.
 logging.basicConfig(
@@ -27,9 +31,17 @@ app = FastAPI(
 )
 
 
+def summarize_only(ticket: JiraTicket) -> RocketChatMessage:
+    """Summarize one ticket and return a Rocket.Chat-ready payload for ticket_router_api."""
+    # Java appends `channel` and auth headers, then forwards `text` to /api/v1/chat.postMessage.
+    logger.info(f"Summarizing ticket: {ticket.key}")
+    summary = summarize_ticket(ticket)
+    return RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, summary))
+
+
 def process_ticket(ticket: JiraTicket) -> dict:
-    """Summarize one ticket and send the result to Rocket.Chat."""
-    # Process a single ticket through the complete Jira -> LLM -> Rocket.Chat flow.
+    """Standalone pipeline: summarize one ticket and send the result to Rocket.Chat."""
+    # Used only by /run and /run/sync, where this service owns the full Jira -> LLM -> Rocket.Chat flow.
     logger.info(f"Processing ticket: {ticket.key}")
     summary = summarize_ticket(ticket)
     send_summary(ticket, summary)
@@ -64,7 +76,7 @@ async def process_tickets_pipeline():
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     # Return the browser icon without showing it in the API documentation.
-    return FileResponse("favicon.ico")
+    return FileResponse(ASSETS_DIR / "favicon.ico")
 
 
 @app.get("/", tags=["Health"])
@@ -89,62 +101,32 @@ async def run_pipeline_sync():
     return JSONResponse({"status": "done", "results": result})
 
 
-@app.post("/tickets/process", tags=["Pipeline"])
+@app.post("/tickets/process", tags=["Pipeline"], response_model=RocketChatMessage)
 async def process_ticket_from_payload(ticket: JiraTicketPayload):
-    """Accept Jira ticket payload directly, summarize it, and send to Rocket.Chat."""
-    # Accept one ticket from the request body instead of loading it from Jira.
+    """Accept one Jira ticket from ticket_router_api and return a Rocket.Chat-ready JSON.
+
+    Posting to Rocket.Chat is owned by the Java router — this endpoint never touches Rocket.Chat.
+    """
     try:
-        result = process_ticket(ticket.to_domain())
-        return JSONResponse({"status": "done", "result": result})
+        return summarize_only(ticket.to_domain())
     except Exception as e:
         logger.error(f"Error processing inbound ticket {ticket.key}: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "ticket": ticket.key, "detail": str(e)},
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/tickets/process/batch", tags=["Pipeline"])
+@app.post("/tickets/process/batch", tags=["Pipeline"], response_model=list[RocketChatMessage])
 async def process_tickets_batch(payload: JiraTicketsBatchPayload):
-    """Accept a batch of Jira tickets and process them sequentially."""
-    # Process manually submitted tickets one after another.
-    results = []
+    """Accept a batch of Jira tickets and return Rocket.Chat-ready JSONs. No Rocket.Chat posting here."""
+    # Failed tickets are skipped (and logged) so the response stays a uniform list of RocketChatMessage.
+    results: list[RocketChatMessage] = []
 
     for ticket_payload in payload.tickets:
         try:
-            results.append(process_ticket(ticket_payload.to_domain()))
+            results.append(summarize_only(ticket_payload.to_domain()))
         except Exception as e:
             logger.error(f"Error processing inbound ticket {ticket_payload.key}: {e}")
-            results.append(
-                {
-                    "ticket": ticket_payload.key,
-                    "status": "error",
-                    "detail": str(e),
-                }
-            )
 
-    return JSONResponse({"status": "done", "results": results})
-
-
-@app.post("/analyze", tags=["Routing"], response_model=AiAnalysisResponse)
-async def analyze(request: AiAnalysisRequest):
-    """Pick the best assignee for one Jira ticket. Used by ticket_router_api as the AI brain.
-
-    This endpoint does NOT post to Rocket.Chat — the caller decides whether to auto-assign
-    in Jira (high confidence) or escalate to a chat channel (low confidence).
-    """
-    try:
-        return analyze_ticket(request)
-    except Exception as e:
-        logger.error("Error analyzing ticket %s: %s", request.ticketKey, e)
-        # Return a low-confidence empty response so the router falls back to manual escalation
-        # instead of failing the whole pipeline on a transient LLM error.
-        return AiAnalysisResponse(
-            assigneeAccountId=None,
-            assigneeDisplayName=None,
-            confidence=0.0,
-            reasoning=f"AI analyzer unavailable: {e}",
-        )
+    return results
 
 
 @app.post("/replies/process", tags=["Replies"])

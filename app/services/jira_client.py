@@ -2,8 +2,8 @@ import logging
 import requests
 from typing import List
 
-from config import settings
-from models.ticket import JiraTicket
+from app.core.config import settings
+from app.models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 

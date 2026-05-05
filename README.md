@@ -18,7 +18,7 @@
 **aiIntegration** is the AI brain for ticket processing. It serves two roles:
 
 1. **Standalone pipeline** — pulls open tickets from Jira, summarizes each via a local LLM (Ollama), and posts the summaries to Rocket.Chat.
-2. **AI service for `ticket_router_api`** — exposes `POST /analyze` so the Java router can ask "who on the team should take this ticket?" and get back an assignee with a confidence score. Reply classification is exposed via `POST /replies/process`.
+2. **AI service for `ticket_router_api`** — exposes ticket summarization endpoints and `POST /replies/process` for reply classification.
 
 In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it only runs LLM logic. Polling Jira, posting to Rocket.Chat, and assigning tickets are owned by the Java router.
 
@@ -44,7 +44,7 @@ In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    FastAPI  /run  /run/sync                  │
-│                  PipelineOrchestrator (main.py)              │
+│                PipelineOrchestrator (app/main.py)            │
 └──────────┬──────────────────────┬───────────────────────────┘
            │                      │                      │
            ▼                      ▼                      ▼
@@ -131,7 +131,7 @@ ollama pull llama3    # Download the model if not already loaded
 ### 4. Start the Service
 
 ```bash
-uvicorn main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
 
 Service available at `http://localhost:8000` · Documentation: `http://localhost:8000/docs`
@@ -145,9 +145,8 @@ Service available at `http://localhost:8000` · Documentation: `http://localhost
 | `GET` | `/` | Healthcheck |
 | `POST` | `/run` | Run pipeline **asynchronously** (returns 200 immediately, processing runs in background) |
 | `POST` | `/run/sync` | Run pipeline **synchronously** — waits and returns results |
-| `POST` | `/tickets/process` | Accept one Jira ticket JSON, summarize it, send to Rocket.Chat |
-| `POST` | `/tickets/process/batch` | Accept several Jira tickets in one request |
-| `POST` | `/analyze` | **Routing**: pick best assignee + confidence for a ticket. Used by `ticket_router_api`. Does **not** post to Rocket.Chat. |
+| `POST` | `/tickets/process` | Accept one Jira ticket JSON from `ticket_router_api`, return the LLM summary. Java posts to Rocket.Chat. |
+| `POST` | `/tickets/process/batch` | Same as `/tickets/process`, batched. Does **not** post to Rocket.Chat. |
 | `POST` | `/replies/process` | Accept one Rocket.Chat reply, classify whether the user takes the ticket |
 | `GET` | `/docs` | Swagger UI |
 
@@ -160,7 +159,7 @@ curl -X POST http://localhost:8000/run
 # Sync run — returns JSON with results for each ticket
 curl -X POST http://localhost:8000/run/sync
 
-# Process one Jira ticket directly
+# Process one Jira ticket directly — returns the summary, does not post to Rocket.Chat
 curl -X POST http://localhost:8000/tickets/process \
   -H "Content-Type: application/json" \
   -d '{
@@ -185,35 +184,6 @@ curl -X POST http://localhost:8000/replies/process \
     "text": "I cannot take it yet, I need production logs."
   }'
 ```
-
-### Example `/analyze` Request / Response
-
-Request shape matches the `AiAnalysisRequest` sent by `ticket_router_api`:
-
-```json
-{
-  "ticketId": "10001",
-  "ticketKey": "PROJ-42",
-  "summary": "Authorization service crashing in prod",
-  "description": "After deploying v2.3.1, users cannot log in.",
-  "priority": "Critical"
-}
-```
-
-Response shape matches the `AiAnalysisResponse` expected by `ticket_router_api`:
-
-```json
-{
-  "assigneeAccountId": "ivan-petrov",
-  "assigneeDisplayName": "Ivan Petrov",
-  "confidence": 0.87,
-  "reasoning": "Auth/backend incident in production matches Ivan's skills."
-}
-```
-
-If the LLM cannot pick a candidate, both `assigneeAccountId` and `assigneeDisplayName` are `null` and `confidence` drops below the Java-side threshold so the router escalates to Rocket.Chat.
-
-The team roster is loaded from `team_roster.json` (path overridable via `TEAM_ROSTER_PATH`). See `team_roster.example.json` for the expected schema. Without a roster file, a small built-in sample roster is used.
 
 ### Example `/run/sync` Response
 
@@ -268,21 +238,28 @@ Recommended next step for production: persist outbound bot messages, inbound rep
 
 ```
 aiIntegration/
-├── main.py                # FastAPI application, pipeline orchestration
-├── config.py              # Settings from .env (python-dotenv)
-├── jira_client.py         # Fetching tickets from Jira (standalone mode)
-├── llm_client.py          # Summarization via Ollama
-├── analyzer.py            # Assignee routing via Ollama (used by ticket_router_api)
-├── reply_classifier.py    # Classifying Rocket.Chat replies via Ollama
-├── rocketchat_client.py   # Formatting and sending to Rocket.Chat (standalone mode)
-├── team_roster.example.json  # Sample team roster used by /analyze
-├── models/
-│   ├── ticket.py          # JiraTicket dataclass + payloads
-│   ├── analysis.py        # AiAnalysisRequest / AiAnalysisResponse (ticket_router_api contract)
-│   └── reply.py           # Rocket.Chat reply payloads + decision
+├── app/
+│   ├── main.py            # FastAPI application, endpoints, pipeline orchestration
+│   ├── core/
+│   │   └── config.py      # Settings from .env (python-dotenv)
+│   ├── models/
+│   │   ├── ticket.py      # JiraTicket dataclass + payloads
+│   │   ├── summary.py     # LLM summary and Rocket.Chat message contracts
+│   │   └── reply.py       # Rocket.Chat reply payloads + decision
+│   └── services/
+│       ├── jira_client.py       # Fetching tickets from Jira (standalone mode)
+│       ├── llm_client.py        # Summarization via Ollama
+│       ├── reply_classifier.py  # Classifying Rocket.Chat replies via Ollama
+│       └── rocketchat_client.py # Formatting and sending to Rocket.Chat
+├── assets/
+│   └── favicon.ico       # Browser icon served by FastAPI
 ├── docs/
-│   └── JAVA_INTEGRATION.md   # Recommendations for the ticket_router_api side
-├── class_diagram.excalidraw  # Class diagram
+│   ├── JAVA_INTEGRATION.md   # Recommendations for the ticket_router_api side
+│   ├── JAVA_TODO.md          # Java-side follow-up checklist
+│   ├── OLLAMA_SETUP.md       # Local LLM setup notes
+│   └── diagrams/             # Draw.io / Excalidraw diagrams
+├── scripts/
+│   └── ensure_ollama.sh   # Local Ollama bootstrap helper
 ├── .env.example           # Environment variables template
 └── requirements.txt       # Dependencies
 ```

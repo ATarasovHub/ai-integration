@@ -2,8 +2,8 @@ import json
 import logging
 import requests
 
-from config import settings
-from models.reply import ReplyDecision, RocketChatReply
+from app.core.config import settings
+from app.models.reply import ReplyDecision, RocketChatReply
 
 logger = logging.getLogger(__name__)
 

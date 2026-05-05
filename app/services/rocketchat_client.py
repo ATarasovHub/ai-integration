@@ -1,13 +1,13 @@
 import logging
 import requests
 
-from config import settings
-from models.ticket import JiraTicket
+from app.core.config import settings
+from app.models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 
 
-def _format_message(ticket: JiraTicket, summary: str) -> str:
+def format_message(ticket: JiraTicket, summary: str) -> str:
     # Build the final Rocket.Chat message text from ticket data and the AI summary.
     return (
         f"📋 *Ticket {ticket.key}* | {ticket.status} | 🔥 {ticket.priority or 'N/A'}\n"
@@ -21,7 +21,7 @@ def send_summary(ticket: JiraTicket, summary: str) -> None:
     """Send ticket summary to Rocket.Chat."""
 
     # Prepare the text that will be posted to the configured channel.
-    message = _format_message(ticket, summary)
+    message = format_message(ticket, summary)
 
     # In mock mode, log the message instead of sending it.
     if settings.ROCKETCHAT_USE_MOCK:

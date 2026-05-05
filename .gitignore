@@ -11,6 +11,7 @@ __pycache__/
 .claude/
 .codex
 
+.idea/
 .vscode/
 
 # Personal presentation notes.
