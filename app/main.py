@@ -11,7 +11,8 @@ from app.models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPay
 from app.services.jira_client import get_tickets
 from app.services.llm_client import summarize_ticket
 from app.services.reply_classifier import classify_reply
-from app.services.rocketchat_client import format_message, send_summary
+from app.services.rocketchat_client import format_message
+from app.services.router_client import send_to_router
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASSETS_DIR = PROJECT_ROOT / "assets"
@@ -40,12 +41,12 @@ def summarize_only(ticket: JiraTicket) -> RocketChatMessage:
 
 
 def process_ticket(ticket: JiraTicket) -> dict:
-    """Standalone pipeline: summarize one ticket and send the result to Rocket.Chat."""
-    # Used only by /run and /run/sync, where this service owns the full Jira -> LLM -> Rocket.Chat flow.
+    """Standalone pipeline: summarize one ticket and forward the result to ticket_router_api."""
+    # Used only by /run and /run/sync. Posting to Rocket.Chat is owned by the Java router.
     logger.info(f"Processing ticket: {ticket.key}")
     summary = summarize_ticket(ticket)
-    send_summary(ticket, summary)
-    logger.info(f"Ticket {ticket.key} successfully processed and sent.")
+    send_to_router(RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, summary)))
+    logger.info(f"Ticket {ticket.key} successfully processed and forwarded.")
     return {"ticket": ticket.key, "status": "ok", "summary": summary}
 
 async def process_tickets_pipeline():

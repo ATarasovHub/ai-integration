@@ -17,10 +17,10 @@
 
 **aiIntegration** is the AI brain for ticket processing. It serves two roles:
 
-1. **Standalone pipeline** — pulls open tickets from Jira, summarizes each via a local LLM (Ollama), and posts the summaries to Rocket.Chat.
+1. **Standalone pipeline** — pulls open tickets from Jira, summarizes each via a local LLM (Ollama), and forwards the summaries to `ticket_router_api`, which posts them to Rocket.Chat.
 2. **AI service for `ticket_router_api`** — exposes ticket summarization endpoints and `POST /replies/process` for reply classification.
 
-In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it only runs LLM logic. Polling Jira, posting to Rocket.Chat, and assigning tickets are owned by the Java router.
+**aiIntegration never talks to Rocket.Chat directly.** All Rocket.Chat delivery is owned by the Java router; aiIntegration only runs LLM logic and forwards ready-to-post payloads.
 
 > **Fully on-premise:** data never leaves your infrastructure. Jira, Rocket.Chat, and LLM — everything runs locally.
 
@@ -30,7 +30,7 @@ In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it 
 
 | Feature | Description |
 |---|---|
-| 🔄 **3-stage pipeline** | Jira → LLM summarization → Rocket.Chat |
+| 🔄 **3-stage pipeline** | Jira → LLM summarization → ticket_router_api → Rocket.Chat |
 | 🧠 **Local LLM** | Ollama + llama3, data stays on-premise |
 | 🔌 **Mock mode** | Test without real external services |
 | ⚡ **Two run modes** | Async (background) and Sync (wait for results) |
@@ -49,16 +49,21 @@ In the second role, **aiIntegration does not touch Jira or Rocket.Chat** — it 
            │                      │                      │
            ▼                      ▼                      ▼
    ┌───────────────┐    ┌──────────────────┐   ┌──────────────────┐
-   │  JiraClient   │    │    LLMClient     │   │RocketChatClient  │
+   │  JiraClient   │    │    LLMClient     │   │  RouterClient    │
    │               │    │                  │   │                  │
-   │ get_tickets() │    │summarize_ticket()│   │  send_summary()  │
+   │ get_tickets() │    │summarize_ticket()│   │ send_to_router() │
    └──────┬────────┘    └────────┬─────────┘   └────────┬─────────┘
           │                      │                       │
           ▼                      ▼                       ▼
-   ┌─────────────┐    ┌──────────────────┐   ┌──────────────────┐
-   │  Jira API   │    │   Ollama API     │   │ Rocket.Chat API  │
-   │  (on-prem)  │    │ /api/generate    │   │/api/v1/chat.post │
-   └─────────────┘    └──────────────────┘   └──────────────────┘
+   ┌─────────────┐    ┌──────────────────┐   ┌──────────────────────┐
+   │  Jira API   │    │   Ollama API     │   │ ticket_router_api    │
+   │  (on-prem)  │    │ /api/generate    │   │ /api/rocketchat/...  │
+   └─────────────┘    └──────────────────┘   └──────────┬───────────┘
+                                                        ▼
+                                              ┌──────────────────┐
+                                              │ Rocket.Chat API  │
+                                              │/api/v1/chat.post │
+                                              └──────────────────┘
 ```
 
 ### Data Model
@@ -112,11 +117,8 @@ JIRA_PROJECT_KEY=MYPROJECT
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3
 
-# Rocket.Chat
-ROCKETCHAT_BASE_URL=https://your-rocketchat.company.com
-ROCKETCHAT_TOKEN=your_bot_token
-ROCKETCHAT_USER_ID=your_bot_user_id
-ROCKETCHAT_CHANNEL=general
+# ticket_router_api (owns Rocket.Chat delivery)
+TICKET_ROUTER_BASE_URL=http://localhost:8080/ticket-router-api
 ```
 
 </details>
@@ -206,11 +208,11 @@ curl -X POST http://localhost:8000/replies/process \
 
 ## 🧪 Testing Without Real Services
 
-By default, the service runs in **mock mode** for Jira and Rocket.Chat. It doesn't connect to external systems, uses test data for Jira, and logs Rocket.Chat messages to console.
+By default, the service runs in **mock mode** for Jira and the router. It doesn't connect to external systems, uses test data for Jira, and logs the would-be router payload to console instead of forwarding it.
 
 ```env
 JIRA_USE_MOCK=true
-ROCKETCHAT_USE_MOCK=true
+TICKET_ROUTER_USE_MOCK=true
 ```
 
 Switch them to `false` in `.env` for production mode, then make sure real URLs and tokens are filled in.
@@ -250,7 +252,8 @@ aiIntegration/
 │       ├── jira_client.py       # Fetching tickets from Jira (standalone mode)
 │       ├── llm_client.py        # Summarization via Ollama
 │       ├── reply_classifier.py  # Classifying Rocket.Chat replies via Ollama
-│       └── rocketchat_client.py # Formatting and sending to Rocket.Chat
+│       ├── rocketchat_client.py # Formatting Rocket.Chat message text
+│       └── router_client.py     # Forwarding ready-to-post payloads to ticket_router_api
 ├── assets/
 │   └── favicon.ico       # Browser icon served by FastAPI
 ├── docs/
