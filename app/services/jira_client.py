@@ -65,7 +65,7 @@ def get_tickets() -> List[JiraTicket]:
         "fields": "summary,description,status,assignee,priority,reporter"
     }
     headers = {
-        "Authorization": f"Bearer {settings.JIRA_API_TOKEN}",
+        "Authorization": f"Bearer {settings.JIRA_API_TOKEN}" ,
         "Content-Type": "application/json"
     }
 
