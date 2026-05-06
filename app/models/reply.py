@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # Internal data object that represents one Rocket.Chat reply.
@@ -42,6 +42,8 @@ class RocketChatReplyPayload(BaseModel):
 
 # Result of the AI classification: ticket accepted or clarification needed.
 class ReplyDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_message_id: str
     source_user_id: str
     confirmed_to_take: bool

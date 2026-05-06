@@ -1,6 +1,7 @@
 import json
 import logging
 import requests
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.reply import ReplyDecision, RocketChatReply
@@ -59,20 +60,43 @@ def classify_reply(reply: RocketChatReply) -> ReplyDecision:
         reply.source_user_id,
     )
 
-    # Parse and validate the JSON response as a ReplyDecision model.
-    try:
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-        data = response.json()
-        raw_response = data.get("response", "").strip()
-        parsed = json.loads(raw_response)
-        decision = ReplyDecision.model_validate(parsed)
-        logger.info(
-            "Reply %s classified: confirmed_to_take=%s",
-            decision.source_message_id,
-            decision.confirmed_to_take,
-        )
-        return decision
-    except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
-        logger.error("Error classifying reply %s: %s", reply.source_message_id, e)
-        raise
+    # Retry strict JSON validation; give up and raise after the configured budget.
+    total_attempts = max(1, settings.LLM_MAX_RETRIES + 1)
+    last_error: Exception | None = None
+
+    for attempt in range(1, total_attempts + 1):
+        try:
+            response = requests.post(url, json=payload, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            raw = data.get("response", "").strip()
+            parsed = json.loads(raw)
+            decision = ReplyDecision.model_validate(parsed)
+            if (
+                decision.source_message_id != reply.source_message_id
+                or decision.source_user_id != reply.source_user_id
+            ):
+                raise ValueError("LLM returned mismatched reply identifiers")
+            logger.info(
+                "Reply %s classified: confirmed_to_take=%s",
+                decision.source_message_id,
+                decision.confirmed_to_take,
+            )
+            return decision
+        except requests.RequestException as e:
+            logger.error("Error classifying reply %s: %s", reply.source_message_id, e)
+            raise
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
+            last_error = e
+            logger.warning(
+                "LLM JSON validation failed for reply %s on attempt %d/%d: %s",
+                reply.source_message_id, attempt, total_attempts, e,
+            )
+
+    logger.error(
+        "LLM returned invalid JSON for reply %s on ticket %s after %d attempts",
+        reply.source_message_id, reply.ticket_key, total_attempts,
+    )
+    raise last_error if last_error else ValueError(
+        f"LLM did not return valid JSON for reply {reply.source_message_id}"
+    )
