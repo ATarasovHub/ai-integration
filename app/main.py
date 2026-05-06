@@ -36,18 +36,18 @@ def summarize_only(ticket: JiraTicket) -> RocketChatMessage:
     """Summarize one ticket and return a Rocket.Chat-ready payload for ticket_router_api."""
     # Java appends `channel` and auth headers, then forwards `text` to /api/v1/chat.postMessage.
     logger.info(f"Summarizing ticket: {ticket.key}")
-    summary = summarize_ticket(ticket)
-    return RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, summary))
+    result = summarize_ticket(ticket)
+    return RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, result))
 
 
 def process_ticket(ticket: JiraTicket) -> dict:
     """Standalone pipeline: summarize one ticket and forward the result to ticket_router_api."""
     # Used only by /run and /run/sync. Posting to Rocket.Chat is owned by the Java router.
     logger.info(f"Processing ticket: {ticket.key}")
-    summary = summarize_ticket(ticket)
-    send_to_router(RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, summary)))
+    result = summarize_ticket(ticket)
+    send_to_router(RocketChatMessage(ticketKey=ticket.key, text=format_message(ticket, result)))
     logger.info(f"Ticket {ticket.key} successfully processed and forwarded.")
-    return {"ticket": ticket.key, "status": "ok", "summary": summary}
+    return {"ticket": ticket.key, "status": "ok", "summary": result.summary, "label": result.label}
 
 async def process_tickets_pipeline():
     """Main ticket processing pipeline."""

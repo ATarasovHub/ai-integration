@@ -16,3 +16,8 @@ __pycache__/
 
 # Personal presentation notes.
 PRESENTATION_NOTES_RU.md
+
+# Local Jira/eval fixtures — may contain real company data, keep out of the repo.
+app/data/*
+# Reference label set used by the LLM prompt — safe to track.
+!app/data/jira_labels.json

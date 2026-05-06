@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # so the model is constrained to valid JSON; this class enforces the shape on our side.
 class LlmTicketSummary(BaseModel):
     summary: str
+    label: str
 
 
 # Rocket.Chat-ready payload returned by /tickets/process and /tickets/process/batch.

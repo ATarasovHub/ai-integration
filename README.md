@@ -35,6 +35,7 @@
 | 🔌 **Mock mode** | Test without real external services |
 | ⚡ **Two run modes** | Async (background) and Sync (wait for results) |
 | 🛡️ **Error resilience** | One failed ticket won't break the entire pipeline |
+| 🔁 **Strict-JSON retries** | LLM responses are validated against a pydantic schema; the call is retried up to `LLM_MAX_RETRIES` times if the model returns malformed JSON |
 | 📋 **REST API** | FastAPI + auto-generated Swagger UI documentation |
 
 ---
@@ -194,12 +195,14 @@ curl -X POST http://localhost:8000/replies/process \
   {
     "ticket": "PROJ-42",
     "status": "ok",
-    "summary": "Authorization service refactoring task assigned to Ivan..."
+    "summary": "Authorization service refactoring task assigned to Ivan...",
+    "label": "Product"
   },
   {
     "ticket": "PROJ-43",
     "status": "ok",
-    "summary": "Critical bug in payment module. High priority..."
+    "summary": "Critical bug in payment module. High priority...",
+    "label": "complaint"
   }
 ]
 ```
@@ -216,6 +219,16 @@ TICKET_ROUTER_USE_MOCK=true
 ```
 
 Switch them to `false` in `.env` for production mode, then make sure real URLs and tokens are filled in.
+
+## 🔁 Strict-JSON Retries
+
+LLM responses are validated against a pydantic schema (`LlmTicketSummary` for summaries, `ReplyDecision` for replies). For summaries the LLM must additionally pick a `label` from the project's allowed list (loaded from `app/data/jira_labels.json`, exported via `scripts/export_jira_labels.py`); a label outside that list is treated as a validation failure. If parsing fails, the call is retried up to `LLM_MAX_RETRIES` extra times — by default `10`, so 11 attempts total. After the budget is exhausted the last error is re-raised and the surrounding endpoint returns 500; the caller decides whether to retry the request itself.
+
+```env
+LLM_MAX_RETRIES=10   # extra retries after the first attempt
+```
+
+---
 
 ## 💬 Reply Classification Flow
 
