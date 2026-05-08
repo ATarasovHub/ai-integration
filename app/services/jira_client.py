@@ -1,4 +1,6 @@
+import json
 import logging
+from pathlib import Path
 import requests
 from typing import List
 
@@ -7,31 +9,11 @@ from app.models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 
-# Local example tickets used when the Jira mock mode is enabled.
-MOCK_TICKETS = [
-    {
-        "key": "MYPROJECT-1",
-        "fields": {
-            "summary": "Authorization service crashing in prod",
-            "description": "After deploying v2.3.1, users cannot log in. Error 503 in logs.",
-            "status": {"name": "In Progress"},
-            "assignee": {"displayName": "Ivan Petrov"},
-            "priority": {"name": "Critical"},
-            "reporter": {"displayName": "Maria Sidorova"},
-        }
-    },
-    {
-        "key": "MYPROJECT-2",
-        "fields": {
-            "summary": "Add pagination to orders list",
-            "description": "Orders page loads all records at once — slows down with >1000 rows.",
-            "status": {"name": "To Do"},
-            "assignee": None,
-            "priority": {"name": "Medium"},
-            "reporter": {"displayName": "Alexey Kuznetsov"},
-        }
-    },
-]
+# Demo Jira tickets used when JIRA_USE_MOCK=true.
+# Covers different statuses, priorities, label categories and edge cases
+# (no assignee, missing priority) so users see the pipeline working end-to-end.
+MOCK_TICKETS_PATH = Path(__file__).resolve().parents[1] / "data" / "mock_tickets.json"
+MOCK_TICKETS = json.loads(MOCK_TICKETS_PATH.read_text(encoding="utf-8"))
 
 
 def _parse_ticket(raw: dict) -> JiraTicket:
@@ -60,7 +42,7 @@ def get_tickets() -> List[JiraTicket]:
     # Build the real Jira API request for open project tickets.
     url = f"{settings.JIRA_BASE_URL}/rest/api/2/search"
     params = {
-        "jql": f"project={settings.JIRA_PROJECT_KEY} AND status != Done ORDER BY created DESC",
+        "jql": settings.JIRA_JQL,
         "maxResults": 10,
         "fields": "summary,description,status,assignee,priority,reporter"
     }

@@ -15,16 +15,13 @@ class Settings:
     JIRA_BASE_URL: str = os.getenv("JIRA_URL", os.getenv("JIRA_BASE_URL", "https://your-jira.example.com"))
     JIRA_API_TOKEN: str = os.getenv("JIRA_API_TOKEN", "your_jira_token")
     JIRA_EMAIL: str = os.getenv("JIRA_EMAIL", "")
-    JIRA_PROJECT_KEY: str = os.getenv("JIRA_PROJECT_KEY", "")
     JIRA_USE_MOCK: bool = os.getenv("JIRA_USE_MOCK", "false").lower() == "true"
+    # Optional JQL override for the standalone pipeline. When empty, defaults to open tickets.
+    JIRA_JQL: str = os.getenv("JIRA_JQL", "status != Done ORDER BY created DESC")
 
     # Ollama API settings.
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
-
-    # ticket_router_api connection settings — Rocket.Chat is owned by the Java router.
-    TICKET_ROUTER_BASE_URL: str = os.getenv("TICKET_ROUTER_BASE_URL", "http://localhost:8080/ticket-router-api")
-    TICKET_ROUTER_USE_MOCK: bool = os.getenv("TICKET_ROUTER_USE_MOCK", "true").lower() == "true"
 
     # LLM JSON validation retry budget (extra attempts after the first one).
     # The call gives up and raises after this many invalid-JSON responses in a row.

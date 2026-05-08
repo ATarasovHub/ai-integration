@@ -21,3 +21,5 @@ PRESENTATION_NOTES_RU.md
 app/data/*
 # Reference label set used by the LLM prompt — safe to track.
 !app/data/jira_labels.json
+# Demo tickets for mock mode — safe to track.
+!app/data/mock_tickets.json

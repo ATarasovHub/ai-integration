@@ -72,16 +72,13 @@ def main() -> None:
     base_url = os.getenv("JIRA_URL", "").strip() or _required_env("JIRA_BASE_URL")
     token = _required_env("JIRA_API_TOKEN")
     email = os.getenv("JIRA_EMAIL", "").strip()
-    project_key = os.getenv("JIRA_PROJECT_KEY", "").strip()
     env_jql = os.getenv("JIRA_LABELS_JQL", "").strip()
     if args.jql:
         jql = args.jql
     elif env_jql:
         jql = env_jql
-    elif project_key:
-        jql = f"project={project_key} ORDER BY created DESC"
     else:
-        raise RuntimeError("Set JIRA_PROJECT_KEY or JIRA_LABELS_JQL in .env, or pass --jql")
+        raise RuntimeError("Set JIRA_LABELS_JQL in .env, or pass --jql")
 
     labels = fetch_labels(base_url=base_url, token=token, jql=jql, limit=args.limit, email=email)
 

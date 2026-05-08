@@ -10,10 +10,8 @@ class LlmTicketSummary(BaseModel):
     label: str
 
 
-# Rocket.Chat-ready payload returned by /tickets/process and /tickets/process/batch.
-# ticket_router_api appends `channel` and auth headers, then POSTs to /api/v1/chat.postMessage.
-class RocketChatMessage(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    ticketKey: str = Field(..., examples=["PROJ-42"])
-    text: str
+# Response payload returned by /tickets/process and /tickets/process/batch.
+class TicketSummaryResponse(BaseModel):
+    ticket: str = Field(..., examples=["PROJ-42"])
+    summary: str
+    label: str

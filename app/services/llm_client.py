@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 
 import requests
 from pydantic import ValidationError
@@ -12,19 +11,15 @@ from app.models.ticket import JiraTicket
 logger = logging.getLogger(__name__)
 
 
-def _load_labels() -> list[str]:
-    path = settings.PROJECT_ROOT / "app" / "data" / "jira_labels.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        logger.warning("Jira labels file not found at %s — label selection disabled", path)
-        return []
+# Load allowed labels from a file once at startup.
+labels_path = settings.PROJECT_ROOT / "app" / "data" / "jira_labels.json"
+try:
+    ALLOWED_LABELS = json.loads(labels_path.read_text(encoding="utf-8"))
+except FileNotFoundError:
+    logger.warning(f"Jira labels file not found at {labels_path}")
+    ALLOWED_LABELS = []
 
 
-ALLOWED_LABELS: list[str] = _load_labels()
-_ALLOWED_LABELS_SET: set[str] = {label.casefold() for label in ALLOWED_LABELS}
-
-# Strict-JSON prompt. The model is also forced to valid JSON via Ollama's `format: "json"`.
 PROMPT_TEMPLATE = """You are a development team assistant. You are given a Jira ticket.
 Return ONLY a JSON object with exactly two keys:
 - "summary": a 3-5 sentence plain-text summary in English describing the problem or task,
@@ -46,41 +41,16 @@ Priority: {priority}
 Reporter: {reporter}"""
 
 
-_JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
-
-
-def _extract_summary(raw: str) -> LlmTicketSummary:
-    # Try the raw response first, then fall back to the first {...} block we can find,
-    # in case the model decided to wrap JSON in commentary despite the constraint.
-    candidates = [raw]
-    match = _JSON_BLOCK.search(raw)
-    if match:
-        candidates.append(match.group(0))
-
-    last_err: Exception | None = None
-    for candidate in candidates:
-        try:
-            result = LlmTicketSummary.model_validate(json.loads(candidate))
-        except (json.JSONDecodeError, ValidationError) as e:
-            last_err = e
-            continue
-        if _ALLOWED_LABELS_SET and result.label.casefold() not in _ALLOWED_LABELS_SET:
-            raise ValueError(f"LLM returned label '{result.label}' not in allowed list")
-        return result
-
-    raise ValueError(f"LLM did not return valid JSON: {raw[:200]}") from last_err
-
-
 def summarize_ticket(ticket: JiraTicket) -> LlmTicketSummary:
-    """Send ticket to Ollama and return the summary + chosen label parsed from strict JSON.
+    """Send ticket to Ollama and return parsed summary with a label."""
 
-    On malformed JSON or an out-of-list label we retry up to settings.LLM_MAX_RETRIES
-    times. If the model keeps producing invalid responses for that many attempts in a
-    row, the last error is re-raised so the caller decides what to do.
-    """
+    if ALLOWED_LABELS:
+        labels_str = ", ".join(ALLOWED_LABELS)
+    else:
+        labels_str = "(none configured)"
 
     prompt = PROMPT_TEMPLATE.format(
-        labels=", ".join(ALLOWED_LABELS) if ALLOWED_LABELS else "(none configured)",
+        labels=labels_str,
         key=ticket.key,
         summary=ticket.summary,
         description=ticket.description,
@@ -98,25 +68,34 @@ def summarize_ticket(ticket: JiraTicket) -> LlmTicketSummary:
         "format": "json",
     }
 
-    total_attempts = max(1, settings.LLM_MAX_RETRIES + 1)
-    last_error: Exception | None = None
+    total_attempts = settings.LLM_MAX_RETRIES + 1
+    last_error = None
 
     for attempt in range(1, total_attempts + 1):
-        logger.info(f"Sending ticket {ticket.key} to Ollama (model: {settings.OLLAMA_MODEL}, attempt {attempt}/{total_attempts})")
+        logger.info(f"Sending ticket {ticket.key} to Ollama (attempt {attempt}/{total_attempts})")
         try:
             response = requests.post(url, json=payload, timeout=120)
             response.raise_for_status()
-            data = response.json()
-            raw = data.get("response", "").strip()
-            result = _extract_summary(raw)
-            logger.info(f"Ollama returned summary for {ticket.key} ({len(result.summary)} chars, label={result.label})")
+            raw = response.json().get("response", "").strip()
+
+            parsed = json.loads(raw)
+            result = LlmTicketSummary.model_validate(parsed)
+
+            # Check that the label is in the allowed list.
+            if ALLOWED_LABELS:
+                allowed_lower = [label.lower() for label in ALLOWED_LABELS]
+                if result.label.lower() not in allowed_lower:
+                    raise ValueError(f"LLM returned label '{result.label}' not in allowed list")
+
+            logger.info(f"Ollama returned summary for {ticket.key}, label={result.label}")
             return result
+
         except requests.RequestException as e:
             logger.error(f"Error requesting Ollama for {ticket.key}: {e}")
             raise
-        except ValueError as e:
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
             last_error = e
-            logger.warning(f"LLM JSON validation failed for {ticket.key} on attempt {attempt}/{total_attempts}: {e}")
+            logger.warning(f"LLM response invalid for {ticket.key} on attempt {attempt}: {e}")
 
-    logger.error(f"LLM returned invalid JSON for ticket {ticket.key} after {total_attempts} attempts")
-    raise last_error if last_error else ValueError(f"LLM did not return valid JSON for ticket {ticket.key}")
+    logger.error(f"LLM returned invalid response for {ticket.key} after {total_attempts} attempts")
+    raise last_error

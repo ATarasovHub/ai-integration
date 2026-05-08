@@ -1,0 +1,112 @@
+[
+  {
+    "key": "MYPROJECT-1",
+    "fields": {
+      "summary": "Authorization service crashing in prod",
+      "description": "After deploying v2.3.1, users cannot log in. Error 503 in logs.",
+      "status": {"name": "In Progress"},
+      "assignee": {"displayName": "Ivan Petrov"},
+      "priority": {"name": "Critical"},
+      "reporter": {"displayName": "Maria Sidorova"}
+    }
+  },
+  {
+    "key": "MYPROJECT-2",
+    "fields": {
+      "summary": "Add pagination to orders list",
+      "description": "Orders page loads all records at once — slows down with >1000 rows.",
+      "status": {"name": "To Do"},
+      "assignee": null,
+      "priority": {"name": "Medium"},
+      "reporter": {"displayName": "Alexey Kuznetsov"}
+    }
+  },
+  {
+    "key": "MYPROJECT-3",
+    "fields": {
+      "summary": "Customer complaint: SMS delivery delays in Cambodia",
+      "description": "Metfone partner reports SMS-MT messages arriving with 30-minute delay since Tuesday. Multiple customer escalations on the support line.",
+      "status": {"name": "Open"},
+      "assignee": {"displayName": "Olga Romanova"},
+      "priority": {"name": "High"},
+      "reporter": {"displayName": "Support Team"}
+    }
+  },
+  {
+    "key": "MYPROJECT-4",
+    "fields": {
+      "summary": "Pricing update request for partner Metfone",
+      "description": "New rates for SMS termination must be applied from next billing cycle. Contract amendment attached. Need confirmation from finance before rollout.",
+      "status": {"name": "In Review"},
+      "assignee": {"displayName": "Dmitry Volkov"},
+      "priority": {"name": "Medium"},
+      "reporter": {"displayName": "Sales Team"}
+    }
+  },
+  {
+    "key": "MYPROJECT-5",
+    "fields": {
+      "summary": "Double-charge bug: customer billed twice for same conversation",
+      "description": "User ID 89421 was charged twice for one chat session. Need to investigate billing pipeline and issue refund.",
+      "status": {"name": "In Progress"},
+      "assignee": {"displayName": "Ekaterina Sokolova"},
+      "priority": {"name": "Critical"},
+      "reporter": {"displayName": "Billing Department"}
+    }
+  },
+  {
+    "key": "MYPROJECT-6",
+    "fields": {
+      "summary": "Improve test coverage for jira_client module",
+      "description": "Current coverage is 42%. Need to add unit tests for retry logic, timeouts, and error mapping. Goal — 80% on services/.",
+      "status": {"name": "To Do"},
+      "assignee": {"displayName": "Pavel Morozov"},
+      "priority": {"name": "Low"},
+      "reporter": {"displayName": "QA Lead"}
+    }
+  },
+  {
+    "key": "MYPROJECT-7",
+    "fields": {
+      "summary": "Spam detection: incoming traffic spike from unknown SID range",
+      "description": "Operator monetization dashboard shows 400% traffic increase from SID 7700-7799 in last 24h. Suspected spam campaign — need to enable filtering.",
+      "status": {"name": "Open"},
+      "assignee": {"displayName": "Anton Lebedev"},
+      "priority": {"name": "High"},
+      "reporter": {"displayName": "Network Operations"}
+    }
+  },
+  {
+    "key": "MYPROJECT-8",
+    "fields": {
+      "summary": "New product feature: bulk ticket export to CSV",
+      "description": "Customers requested ability to export filtered ticket lists as CSV. UX mockups attached. Backend endpoint + frontend button needed.",
+      "status": {"name": "Backlog"},
+      "assignee": null,
+      "priority": {"name": "Medium"},
+      "reporter": {"displayName": "Product Manager"}
+    }
+  },
+  {
+    "key": "MYPROJECT-9",
+    "fields": {
+      "summary": "Quality issue: voice call drops after 30 seconds",
+      "description": "NIS partner reports systematic call drops at 30-second mark on inbound traffic. Logs show RTP timeout. May be related to recent firewall changes.",
+      "status": {"name": "In Progress"},
+      "assignee": {"displayName": "Sergey Fedorov"},
+      "priority": {"name": "High"},
+      "reporter": {"displayName": "NOC Team"}
+    }
+  },
+  {
+    "key": "MYPROJECT-10",
+    "fields": {
+      "summary": "General info request: how to access analytics dashboard",
+      "description": "New customer asking for documentation on accessing the conversations analytics dashboard. Need to point them to the user guide and grant view-only role.",
+      "status": {"name": "To Do"},
+      "assignee": {"displayName": "Anna Smirnova"},
+      "priority": null,
+      "reporter": {"displayName": "Customer Success"}
+    }
+  }
+]

@@ -2,9 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.models.reply import RocketChatReply
 from app.models.ticket import JiraTicket
-from app.services import llm_client, reply_classifier
+from app.services import llm_client
 
 
 class FakeOllamaResponse:
@@ -74,83 +73,6 @@ class LlmJsonContractTests(unittest.TestCase):
             self.assertRaises(ValueError),
         ):
             llm_client.summarize_ticket(ticket)
-
-    def test_classify_reply_retries_until_exact_reply_schema(self) -> None:
-        reply = RocketChatReply(
-            ticket_key="ATM-3",
-            source_message_id="rocket-msg-1",
-            parent_message_id="rocket-parent-1",
-            source_user_id="user-1",
-            source_username="ivan",
-            text="I will take it.",
-        )
-        invalid_extra_key = json.dumps(
-            {
-                "source_message_id": "rocket-msg-1",
-                "source_user_id": "user-1",
-                "confirmed_to_take": True,
-                "clarification_response": None,
-                "extra": "not allowed",
-            }
-        )
-        valid = json.dumps(
-            {
-                "source_message_id": "rocket-msg-1",
-                "source_user_id": "user-1",
-                "confirmed_to_take": True,
-                "clarification_response": None,
-            }
-        )
-
-        with (
-            patch.object(reply_classifier.settings, "LLM_MAX_RETRIES", 1),
-            patch("app.services.reply_classifier.requests.post") as post,
-        ):
-            post.side_effect = [FakeOllamaResponse(invalid_extra_key), FakeOllamaResponse(valid)]
-
-            result = reply_classifier.classify_reply(reply)
-
-        self.assertTrue(result.confirmed_to_take)
-        self.assertEqual(post.call_count, 2)
-
-    def test_classify_reply_retries_on_mismatched_identifiers(self) -> None:
-        reply = RocketChatReply(
-            ticket_key="ATM-4",
-            source_message_id="rocket-msg-2",
-            parent_message_id="rocket-parent-2",
-            source_user_id="user-2",
-            source_username="maria",
-            text="I need logs before I can take this.",
-        )
-        wrong_ids = json.dumps(
-            {
-                "source_message_id": "other-message",
-                "source_user_id": "other-user",
-                "confirmed_to_take": False,
-                "clarification_response": "The user asks for logs before accepting ownership.",
-            }
-        )
-        valid = json.dumps(
-            {
-                "source_message_id": "rocket-msg-2",
-                "source_user_id": "user-2",
-                "confirmed_to_take": False,
-                "clarification_response": "The user asks for logs before accepting ownership.",
-            }
-        )
-
-        with (
-            patch.object(reply_classifier.settings, "LLM_MAX_RETRIES", 1),
-            patch("app.services.reply_classifier.requests.post") as post,
-        ):
-            post.side_effect = [FakeOllamaResponse(wrong_ids), FakeOllamaResponse(valid)]
-
-            result = reply_classifier.classify_reply(reply)
-
-        self.assertFalse(result.confirmed_to_take)
-        self.assertEqual(result.source_message_id, reply.source_message_id)
-        self.assertEqual(result.source_user_id, reply.source_user_id)
-        self.assertEqual(post.call_count, 2)
 
 
 if __name__ == "__main__":
