@@ -5,14 +5,12 @@ import requests
 from pydantic import ValidationError
 
 from app.core.config import settings
-from app.models.chat import LlmAssignmentDecision, RocketChatMessagePayload
+from app.models.chat import LlmAssignmentDecision
 from app.models.summary import LlmTicketSummary
-from app.models.ticket import JiraTicket
 
 logger = logging.getLogger(__name__)
 
 
-# Load allowed labels from a file once at startup.
 labels_path = settings.PROJECT_ROOT / "app" / "data" / "jira_labels.json"
 try:
     ALLOWED_LABELS = json.loads(labels_path.read_text(encoding="utf-8"))
@@ -42,9 +40,14 @@ Priority: {priority}
 Reporter: {reporter}"""
 
 
-def summarize_ticket(ticket: JiraTicket) -> LlmTicketSummary:
-    """Send ticket to Ollama and return parsed summary with a label."""
+def label_is_allowed(label):
+    for allowed_label in ALLOWED_LABELS:
+        if allowed_label.lower() == label.lower():
+            return True
+    return False
 
+
+def summarize_ticket(ticket):
     if ALLOWED_LABELS:
         labels_str = ", ".join(ALLOWED_LABELS)
     else:
@@ -82,10 +85,8 @@ def summarize_ticket(ticket: JiraTicket) -> LlmTicketSummary:
             parsed = json.loads(raw)
             result = LlmTicketSummary.model_validate(parsed)
 
-            # Check that the label is in the allowed list.
             if ALLOWED_LABELS:
-                allowed_lower = [label.lower() for label in ALLOWED_LABELS]
-                if result.label.lower() not in allowed_lower:
+                if not label_is_allowed(result.label):
                     raise ValueError(f"LLM returned label '{result.label}' not in allowed list")
 
             logger.info(f"Ollama returned summary for {ticket.key}, label={result.label}")
@@ -103,13 +104,16 @@ def summarize_ticket(ticket: JiraTicket) -> LlmTicketSummary:
 
 
 ASSIGNMENT_PROMPT_TEMPLATE = """You are a Jira assistant reading a chat message about a ticket.
-Decide whether the message is an EXPLICIT request from the author to assign the ticket to themselves.
-Only set "assign" to true if the message clearly states the author wants to take, pick up, claim, or be assigned the ticket.
-Mere discussion, questions, or comments do not count. If unsure, return false.
+Always produce a short, helpful English reply to the message author — never stay silent.
+Additionally decide whether the message is an EXPLICIT self-assignment request from the author
+(they want to take, pick up, claim, or be assigned the ticket). Mere discussion, questions, or comments
+do not count as self-assignment. If unsure about self-assignment, set assign to false.
 
 Return ONLY a JSON object with exactly two keys:
-- "assign": boolean.
-- "message": when assign is true, a short English confirmation like "Ticket {ticket_key} assigned to {user_name}". When assign is false, an empty string.
+- "assign": boolean — true only on explicit self-assignment.
+- "message": a non-empty short English reply (1-2 sentences). When assign is true, phrase it as a
+  confirmation like "Ticket {ticket_key} assigned to {user_name}". Otherwise, reply contextually to
+  the author's message: briefly acknowledge, answer, or ask a clarifying question.
 
 No markdown, no code fences, no extra keys, no preamble, no trailing text.
 
@@ -118,9 +122,7 @@ Author: {user_name}
 Message: {text}"""
 
 
-def decide_chat_assignment(payload: RocketChatMessagePayload) -> LlmAssignmentDecision:
-    """Ask LLM whether the chat message is an explicit self-assignment request."""
-
+def generate_chat_reply(payload):
     prompt = ASSIGNMENT_PROMPT_TEMPLATE.format(
         ticket_key=payload.ticket_key or "(unknown)",
         user_name=payload.user_name,
@@ -139,7 +141,7 @@ def decide_chat_assignment(payload: RocketChatMessagePayload) -> LlmAssignmentDe
     last_error = None
 
     for attempt in range(1, total_attempts + 1):
-        logger.info(f"Sending chat assignment request to Ollama for {payload.ticket_key} (attempt {attempt}/{total_attempts})")
+        logger.info(f"Sending chat reply request to Ollama for {payload.ticket_key} (attempt {attempt}/{total_attempts})")
         try:
             response = requests.post(url, json=body, timeout=120)
             response.raise_for_status()
@@ -147,16 +149,21 @@ def decide_chat_assignment(payload: RocketChatMessagePayload) -> LlmAssignmentDe
 
             parsed = json.loads(raw)
             decision = LlmAssignmentDecision.model_validate(parsed)
+            if not decision.message.strip():
+                raise ValueError("LLM returned empty reply message")
 
-            logger.info(f"Ollama assignment decision for {payload.ticket_key}: assign={decision.assign}")
+            logger.info(f"Ollama chat reply for {payload.ticket_key}: assign={decision.assign}")
             return decision
 
         except requests.RequestException as e:
-            logger.error(f"Error requesting Ollama for chat assignment {payload.ticket_key}: {e}")
+            logger.error(f"Error requesting Ollama for chat reply {payload.ticket_key}: {e}")
             raise
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
             last_error = e
-            logger.warning(f"LLM assignment response invalid for {payload.ticket_key} on attempt {attempt}: {e}")
+            logger.warning(f"LLM chat reply invalid for {payload.ticket_key} on attempt {attempt}: {e}")
 
-    logger.error(f"LLM returned invalid assignment response for {payload.ticket_key} after {total_attempts} attempts")
+    logger.error(f"LLM returned invalid chat reply for {payload.ticket_key} after {total_attempts} attempts")
     raise last_error
+
+
+    

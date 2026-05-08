@@ -15,7 +15,7 @@
 
 ## 📌 About
 
-**aiIntegration** is the AI brain for ticket processing: it pulls open tickets from Jira, summarizes each via a local LLM (Ollama), classifies it with one of the allowed Jira labels, and returns the structured result. It also acts on Rocket.Chat messages forwarded by `ticket_router_api`: the LLM decides whether a chat message is an explicit self-assignment request for a ticket, and if so the service posts a confirmation back to Rocket.Chat through `ticket_router_api`. Direct delivery to chat platforms is otherwise out of scope.
+**aiIntegration** is the AI brain for ticket processing: it pulls open tickets from Jira, summarizes each via a local LLM (Ollama), classifies it with one of the allowed Jira labels, and returns the structured result. It also acts on Rocket.Chat messages forwarded by `ticket_router_api`: for every incoming message tied to a ticket the LLM produces a reply that is always posted back to Rocket.Chat through `ticket_router_api`. The LLM additionally flags whether the message is an explicit self-assignment request, in which case the reply is phrased as an assignment confirmation. Direct delivery to chat platforms is otherwise out of scope.
 
 > **Fully on-premise:** data never leaves your infrastructure. Jira and the LLM run locally.
 
@@ -164,7 +164,7 @@ docker compose down -v          # stop everything AND wipe the LLM model
 | `POST` | `/run/sync` | Run pipeline **synchronously** — waits and returns results |
 | `POST` | `/tickets/process` | Accept one Jira ticket JSON, return the LLM summary + label |
 | `POST` | `/tickets/process/batch` | Same as `/tickets/process`, batched. Failed tickets are skipped |
-| `POST` | `/chat/message` | Receive a Rocket.Chat message forwarded by `ticket_router_api`; if the LLM detects an explicit self-assignment request, post a confirmation back to Rocket.Chat |
+| `POST` | `/chat/message` | Receive a Rocket.Chat message forwarded by `ticket_router_api`; the LLM always generates a reply that is posted back to Rocket.Chat, and the response also flags whether the message was an explicit self-assignment request |
 | `GET` | `/docs` | Swagger UI |
 
 ### Example Usage

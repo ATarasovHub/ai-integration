@@ -2,13 +2,13 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 
 from app.models.chat import RocketChatMessagePayload
 from app.models.summary import TicketSummaryResponse
-from app.models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
+from app.models.ticket import JiraTicketPayload, JiraTicketsBatchPayload
 from app.services.jira_client import get_tickets
-from app.services.llm_client import decide_chat_assignment, summarize_ticket
+from app.services.llm_client import generate_chat_reply, summarize_ticket
 from app.services.ticket_router_client import send_rocket_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -27,15 +27,13 @@ app = FastAPI(
 )
 
 
-def summarize_only(ticket: JiraTicket) -> TicketSummaryResponse:
-    """Summarize one ticket and return the structured result."""
+def summarize_only(ticket):
     logger.info(f"Summarizing ticket: {ticket.key}")
     result = summarize_ticket(ticket)
     return TicketSummaryResponse(ticket=ticket.key, summary=result.summary, label=result.label)
 
 
-def process_ticket(ticket: JiraTicket) -> dict:
-    """Standalone pipeline step: summarize one ticket and return the result."""
+def process_ticket(ticket):
     logger.info(f"Processing ticket: {ticket.key}")
     result = summarize_ticket(ticket)
     logger.info(f"Ticket {ticket.key} summarized successfully.")
@@ -43,7 +41,6 @@ def process_ticket(ticket: JiraTicket) -> dict:
 
 
 async def process_tickets_pipeline():
-    """Main ticket processing pipeline."""
     logger.info("Starting ticket processing pipeline...")
 
     tickets = get_tickets()
@@ -66,7 +63,10 @@ async def process_tickets_pipeline():
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
-    return FileResponse(ASSETS_DIR / "favicon.ico")
+    icon_path = ASSETS_DIR / "favicon.ico"
+    if not icon_path.exists():
+        raise HTTPException(status_code=404, detail="favicon not found")
+    return FileResponse(icon_path)
 
 
 @app.get("/", tags=["Health"])
@@ -76,21 +76,18 @@ def root():
 
 @app.post("/run", tags=["Pipeline"])
 async def run_pipeline(background_tasks: BackgroundTasks):
-    """Run the ticket processing pipeline (async in background)."""
     background_tasks.add_task(process_tickets_pipeline)
-    return JSONResponse({"status": "started", "message": "Pipeline started in background"})
+    return {"status": "started", "message": "Pipeline started in background"}
 
 
 @app.post("/run/sync", tags=["Pipeline"])
 async def run_pipeline_sync():
-    """Run the pipeline synchronously and get results immediately."""
     result = await process_tickets_pipeline()
-    return JSONResponse({"status": "done", "results": result})
+    return {"status": "done", "results": result}
 
 
 @app.post("/tickets/process", tags=["Pipeline"], response_model=TicketSummaryResponse)
 async def process_ticket_from_payload(ticket: JiraTicketPayload):
-    """Accept one Jira ticket and return its AI summary + label."""
     try:
         return summarize_only(ticket.to_domain())
     except Exception as e:
@@ -100,26 +97,33 @@ async def process_ticket_from_payload(ticket: JiraTicketPayload):
 
 @app.post("/chat/message", tags=["Chat"])
 async def receive_chat_message(payload: RocketChatMessagePayload):
-    """Receive a Rocket.Chat message forwarded by ticket_router_api and act on assignment intent."""
-    logger.info(f"Received Rocket.Chat message from {payload.user_name}, ticketKey={payload.ticket_key}, threadMessageId={payload.thread_message_id}")
+    logger.info(
+        f"Received Rocket.Chat message from {payload.user_name}, "
+        f"ticketKey={payload.ticket_key}, threadMessageId={payload.thread_message_id}"
+    )
 
     if not payload.ticket_key:
         logger.info("No ticketKey resolved for the message, skipping LLM decision")
-        return JSONResponse({"status": "skipped", "reason": "no_ticket_key"})
+        return {"status": "skipped", "reason": "no_ticket_key"}
 
-    decision = decide_chat_assignment(payload)
+    try:
+        decision = generate_chat_reply(payload)
+    except Exception as e:
+        logger.error(f"Error generating chat reply for {payload.ticket_key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if not decision.assign:
-        return JSONResponse({"status": "ok", "assigned": False})
+    try:
+        send_rocket_message(payload.ticket_key, decision.message)
+    except Exception as e:
+        logger.error(f"Error sending Rocket.Chat message for {payload.ticket_key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    send_rocket_message(payload.ticket_key, decision.message)
-    return JSONResponse({"status": "ok", "assigned": True, "message": decision.message})
+    return {"status": "ok", "assigned": decision.assign, "message": decision.message}
 
 
 @app.post("/tickets/process/batch", tags=["Pipeline"], response_model=list[TicketSummaryResponse])
 async def process_tickets_batch(payload: JiraTicketsBatchPayload):
-    """Accept a batch of Jira tickets and return AI summaries. Failed tickets are skipped."""
-    results: list[TicketSummaryResponse] = []
+    results = []
 
     for ticket_payload in payload.tickets:
         try:
