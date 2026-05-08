@@ -4,10 +4,12 @@ from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 
+from app.models.chat import RocketChatMessagePayload
 from app.models.summary import TicketSummaryResponse
 from app.models.ticket import JiraTicket, JiraTicketPayload, JiraTicketsBatchPayload
 from app.services.jira_client import get_tickets
-from app.services.llm_client import summarize_ticket
+from app.services.llm_client import decide_chat_assignment, summarize_ticket
+from app.services.ticket_router_client import send_rocket_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASSETS_DIR = PROJECT_ROOT / "assets"
@@ -94,6 +96,24 @@ async def process_ticket_from_payload(ticket: JiraTicketPayload):
     except Exception as e:
         logger.error(f"Error processing inbound ticket {ticket.key}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/message", tags=["Chat"])
+async def receive_chat_message(payload: RocketChatMessagePayload):
+    """Receive a Rocket.Chat message forwarded by ticket_router_api and act on assignment intent."""
+    logger.info(f"Received Rocket.Chat message from {payload.user_name}, ticketKey={payload.ticket_key}, threadMessageId={payload.thread_message_id}")
+
+    if not payload.ticket_key:
+        logger.info("No ticketKey resolved for the message, skipping LLM decision")
+        return JSONResponse({"status": "skipped", "reason": "no_ticket_key"})
+
+    decision = decide_chat_assignment(payload)
+
+    if not decision.assign:
+        return JSONResponse({"status": "ok", "assigned": False})
+
+    send_rocket_message(payload.ticket_key, decision.message)
+    return JSONResponse({"status": "ok", "assigned": True, "message": decision.message})
 
 
 @app.post("/tickets/process/batch", tags=["Pipeline"], response_model=list[TicketSummaryResponse])

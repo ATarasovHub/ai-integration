@@ -27,6 +27,9 @@ class Settings:
     # The call gives up and raises after this many invalid-JSON responses in a row.
     LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "10"))
 
+    # ticket_router_api base URL for sending Rocket.Chat replies.
+    TICKET_ROUTER_BASE_URL: str = os.getenv("TICKET_ROUTER_BASE_URL", "http://localhost:8080")
+
 
 # Create one shared settings object for the application.
 settings = Settings()
