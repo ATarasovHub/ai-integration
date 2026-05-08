@@ -7,8 +7,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def send_rocket_message(ticket_key: str, text: str) -> None:
-    """Send a Rocket.Chat message via ticket_router_api."""
+def send_rocket_message(ticket_key, text):
     url = f"{settings.TICKET_ROUTER_BASE_URL.rstrip('/')}/api/rocketchat/messages"
     payload = {"ticketKey": ticket_key, "text": text}
 

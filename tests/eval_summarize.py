@@ -1,10 +1,3 @@
-"""One-off eval: run `summarize_ticket` on a couple of real Jira fixtures and
-print how many attempts the LLM needs to produce schema-valid JSON.
-
-Usage:  python -m tests.eval_summarize [count]
-        (count = how many tickets to take from app/data/jira_tickets.json; default 2)
-"""
-
 import json
 import logging
 import sys
@@ -18,18 +11,16 @@ DATA_FILE = Path(__file__).resolve().parents[1] / "app" / "data" / "jira_tickets
 
 
 class AttemptCounter(logging.Handler):
-    """Count attempts by watching the INFO line `... attempt N/M ...` from llm_client."""
-
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__(level=logging.INFO)
         self.attempts = 0
 
-    def emit(self, record: logging.LogRecord) -> None:
+    def emit(self, record):
         if "attempt " in record.getMessage() and "Sending ticket" in record.getMessage():
             self.attempts += 1
 
 
-def main() -> int:
+def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 2
 
     logging.basicConfig(

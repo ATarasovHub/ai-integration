@@ -4,7 +4,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-# Internal data object that represents one Jira ticket.
 @dataclass
 class JiraTicket:
     key: str
@@ -16,7 +15,6 @@ class JiraTicket:
     reporter: Optional[str] = None
 
 
-# API input model with validation, received by the endpoint.
 class JiraTicketPayload(BaseModel):
     key: str = Field(..., examples=["PROJ-42"])
     summary: str
@@ -26,7 +24,6 @@ class JiraTicketPayload(BaseModel):
     priority: Optional[str] = None
     reporter: Optional[str] = None
 
-    # Convert the API model into the internal domain object.
     def to_domain(self) -> JiraTicket:
         return JiraTicket(
             key=self.key,
@@ -39,6 +36,5 @@ class JiraTicketPayload(BaseModel):
         )
 
 
-# Input model for batch processing multiple tickets.
 class JiraTicketsBatchPayload(BaseModel):
     tickets: list[JiraTicketPayload]
